@@ -18,5 +18,8 @@ COPY . .
 # Expose FastAPI port
 EXPOSE 8000
 
-# Default: run FastAPI server
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+# Make startup script executable
+RUN chmod +x start.sh
+
+# Run both Celery worker and FastAPI server using the startup script
+CMD ["./start.sh"]

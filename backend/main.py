@@ -93,7 +93,11 @@ async def root():
 async def health():
     """Health check endpoint."""
     try:
-        r = redis_sync.from_url(REDIS_URL, decode_responses=True)
+        url = REDIS_URL
+        if url.startswith("rediss://") and "ssl_cert_reqs" not in url:
+            separator = "&" if "?" in url else "?"
+            url = f"{url}{separator}ssl_cert_reqs=none"
+        r = redis_sync.from_url(url, decode_responses=True)
         r.ping()
         redis_ok = True
     except Exception:

@@ -22,6 +22,10 @@ logger = logging.getLogger(__name__)
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
+if REDIS_URL.startswith("rediss://") and "ssl_cert_reqs" not in REDIS_URL:
+    separator = "&" if "?" in REDIS_URL else "?"
+    REDIS_URL = f"{REDIS_URL}{separator}ssl_cert_reqs=none"
+
 # ─── Celery App ───────────────────────────────────────────────────────────────
 
 celery_app = Celery(

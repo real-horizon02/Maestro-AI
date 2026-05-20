@@ -1,0 +1,105 @@
+version: '3.9'
+
+services:
+  # ─── Redis Message Broker ────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: maestro-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - maestro-net
+
+  # ─── FastAPI Backend ──────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: maestro-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - REDIS_URL=redis://redis:6379/0
+      - DATABASE_URL=sqlite+aiosqlite:///./maestro.db
+      - GROQ_MODEL=llama-3.3-70b-versatile
+      - BATCH_SIZE=5
+      - MAX_RETRIES=3
+      - TASK_TIMEOUT=60
+    volumes:
+      - ./backend:/app
+      - maestro-db:/app/data
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - maestro-net
+    restart: unless-stopped
+
+  # ─── Celery Workers ───────────────────────────────────────────────────────────
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: maestro-worker
+    command: >
+      celery -A workers.celery_worker.celery_app worker
+      --loglevel=info
+      --concurrency=4
+      -Q retriever_queue,analyzer_queue,writer_queue,validator_queue
+    environment:
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - REDIS_URL=redis://redis:6379/0
+      - DATABASE_URL=sqlite+aiosqlite:///./maestro.db
+      - GROQ_MODEL=llama-3.3-70b-versatile
+      - BATCH_SIZE=5
+      - MAX_RETRIES=3
+      - TASK_TIMEOUT=60
+    volumes:
+      - ./backend:/app
+      - maestro-db:/app/data
+    depends_on:
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    networks:
+      - maestro-net
+    restart: unless-stopped
+
+  # ─── React Frontend ───────────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: maestro-frontend
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_URL=http://localhost:8000
+      - VITE_WS_URL=ws://localhost:8000
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+    networks:
+      - maestro-net
+    restart: unless-stopped
+
+networks:
+  maestro-net:
+    driver: bridge
+
+volumes:
+  maestro-db:
